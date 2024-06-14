@@ -186,7 +186,7 @@ func TestSiteConfigBuilder_render(t *testing.T) {
 			AdditionalNTPSources:   []string{"NTP.server1", "10.16.231.22"},
 			MachineNetwork:         []v1alpha1.MachineNetworkEntry{{CIDR: "10.16.231.0/24"}},
 			ClusterNetwork:         []v1alpha1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14", HostPrefix: 23}},
-			ServiceNetwork:         []string{"172.30.0.0/16"},
+			// ServiceNetwork:         []string{"172.30.0.0/16"},
 			NetworkType:            "OVNKubernetes",
 			ClusterLabels:          map[string]string{"group-du-sno": "test", "common": "true", "sites": "site-sno-du-1"},
 			InstallConfigOverrides: "{\"capabilities\":{\"baselineCapabilitySet\": \"None\", \"additionalEnabledCapabilities\": [ \"marketplace\", \"NodeTuning\" ] }}",
@@ -273,7 +273,8 @@ func TestSiteConfigBuilder_render(t *testing.T) {
 					"networking": map[string]interface{}{
 						"clusterNetwork": []interface{}{map[string]interface{}{"cidr": "10.128.0.0/14", "hostPrefix": 23}},
 						"machineNetwork": []interface{}{map[string]interface{}{"cidr": "10.16.231.0/24"}},
-						"serviceNetwork": []interface{}{"172.30.0.0/16"}},
+						// "serviceNetwork": []interface{}{"172.30.0.0/16"}
+					},
 					"provisionRequirements": map[string]interface{}{"controlPlaneAgents": 1, "workerAgents": 0},
 					"sshPublicKey":          "ssh-rsa"}},
 			wantErr: false,

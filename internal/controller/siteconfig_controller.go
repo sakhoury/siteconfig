@@ -110,6 +110,8 @@ func requeueWithCustomInterval(interval time.Duration) ctrl.Result {
 //+kubebuilder:rbac:groups=metal3.io,resources=baremetalhosts,verbs=get;create;update;patch
 //+kubebuilder:rbac:groups=agent.open-cluster-management.io,resources=klusterletaddonconfigs,verbs=get;create;update;patch
 //+kubebuilder:rbac:groups=metal3.io,resources=hostfirmwaresettings,verbs=get;create;update;patch
+//+kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;create;update;patch
+//+kubebuilder:rbac:groups=hypershift.openshift.io,resources=nodepools,verbs=get;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -394,7 +396,8 @@ func (r *SiteConfigReconciler) executeRenderedManifests(ctx context.Context, c c
 				manifestRef.Message = err.Error()
 			} else {
 				setOwnerRef := func() error {
-					if kind != managedClusterKind {
+					namespace, ok := metadata["namespace"].(string)
+					if kind != managedClusterKind && ok && namespace == siteConfig.Namespace {
 						return ctrl.SetControllerReference(siteConfig, &obj, r.Scheme)
 					}
 					return nil

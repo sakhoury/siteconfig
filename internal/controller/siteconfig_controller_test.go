@@ -512,6 +512,91 @@ spec:
 			Expect(matched).To(Equal(true), "Condition %s was not found", expCond.Type)
 		}
 	})
+
+	It("successfully renders templates in a different namespace and updates the status correctly", func() {
+		siteConfig.Spec.Nodes[0].TemplateRefs = []v1alpha1.TemplateRef{
+			{
+				Name:      "test",
+				Namespace: "default",
+			},
+		}
+
+		siteConfig.Spec.TemplateRefs = []v1alpha1.TemplateRef{
+			{
+				Name:      "test",
+				Namespace: "default",
+			},
+		}
+
+		templateStr := `apiVersion: test.io/v1
+metadata:
+  name: "{{ .Site.ClusterName }}"
+  annotations:
+    metaclusterinstall.openshift.io/sync-wave: "1"
+kind: Test
+spec:
+  name: "{{ .Site.ClusterName }}"`
+
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Data: map[string]string{"Test": templateStr},
+		}
+		Expect(c.Create(ctx, cm)).To(Succeed())
+		Expect(c.Create(ctx, siteConfig)).To(Succeed())
+
+		err := r.handleValidate(ctx, siteConfig)
+		Expect(err).ToNot(HaveOccurred())
+
+		rendered, err := r.handleRenderTemplates(ctx, siteConfig)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rendered).To(Equal(true))
+
+		// Verify correct status conditions are set
+		key := types.NamespacedName{
+			Name:      siteConfig.Name,
+			Namespace: siteConfig.Namespace,
+		}
+		Expect(c.Get(ctx, key, siteConfig)).To(Succeed())
+
+		expectedConditions := []metav1.Condition{
+			{
+				Type:   string(conditions.SiteConfigValidated),
+				Reason: string(conditions.Completed),
+				Status: metav1.ConditionTrue,
+			},
+			{
+				Type:   string(conditions.RenderedTemplates),
+				Reason: string(conditions.Completed),
+				Status: metav1.ConditionTrue,
+			},
+			{
+				Type:   string(conditions.RenderedTemplatesValidated),
+				Reason: string(conditions.Completed),
+				Status: metav1.ConditionTrue,
+			},
+			{
+				Type:   string(conditions.RenderedTemplatesApplied),
+				Reason: string(conditions.Completed),
+				Status: metav1.ConditionTrue,
+			},
+		}
+
+		for _, expCond := range expectedConditions {
+			matched := false
+			for _, cond := range siteConfig.Status.Conditions {
+				if cond.Type == expCond.Type &&
+					cond.Reason == expCond.Reason &&
+					cond.Status == expCond.Status {
+					matched = true
+				}
+			}
+			Expect(matched).To(Equal(true), "Condition %s was not found", expCond.Type)
+		}
+	})
+
 })
 
 var _ = Describe("updateSuppressedManifestsStatus", func() {

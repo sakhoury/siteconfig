@@ -348,6 +348,24 @@ spec:
           - list
           - watch
         - apiGroups:
+          - hypershift.openshift.io
+          resources:
+          - hostedclusters
+          verbs:
+          - create
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - hypershift.openshift.io
+          resources:
+          - nodepools
+          verbs:
+          - create
+          - get
+          - patch
+          - update
+        - apiGroups:
           - metaclusterinstall.openshift.io
           resources:
           - siteconfigs
