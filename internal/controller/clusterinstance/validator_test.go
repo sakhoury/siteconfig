@@ -178,7 +178,7 @@ var _ = Describe("Validate", func() {
 		Expect(c.Create(ctx, clusterInstance)).To(Succeed())
 
 		err := Validate(ctx, c, clusterInstance)
-		Expect(err).To(MatchError(ContainSubstring("at least 1 ControlPlane agent is required")))
+		Expect(err).To(MatchError(ContainSubstring("at least 1 control-plane agent is required")))
 	})
 
 	It("fails validation when more than 1 ControlPlane agent is defined for SNO-based cluster-type", func() {
@@ -198,6 +198,6 @@ var _ = Describe("Validate", func() {
 		Expect(c.Create(ctx, clusterInstance)).To(Succeed())
 
 		err := Validate(ctx, c, clusterInstance)
-		Expect(err).To(MatchError(ContainSubstring("sno cluster-type can only have 1 control-plane agent")))
+		Expect(err).To(MatchError(ContainSubstring("SNO cluster-type must have exactly 1 control-plane agent")))
 	})
 })

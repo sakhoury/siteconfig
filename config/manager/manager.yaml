@@ -77,5 +77,8 @@ spec:
             cpu: 100m
             memory: 256Mi
             ephemeral-storage: "1Gi"
+        ports: []
+        volumeMounts: []
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      volumes: []

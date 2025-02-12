@@ -17,7 +17,6 @@ package clusterinstance
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -113,67 +112,6 @@ func validateTemplateRefs(ctx context.Context, c client.Client, clusterInstance 
 	return nil
 }
 
-func isValidJSONString(input string) bool {
-	if input == "" {
-		return true
-	}
-
-	var result interface{}
-	err := json.Unmarshal([]byte(input), &result)
-	return err == nil
-}
-
-func validateJSONStrings(clusterInstance *v1alpha1.ClusterInstance) error {
-	// Check that InstallConfigOverrides is a valid json-formatted string
-	if !isValidJSONString(clusterInstance.Spec.InstallConfigOverrides) {
-		return fmt.Errorf("installConfigOverrides is not a valid JSON-formatted string")
-	}
-
-	// Check that IgnitionConfigOverride is a valid json-formatted string
-	if !isValidJSONString(clusterInstance.Spec.IgnitionConfigOverride) {
-		return fmt.Errorf("cluster-level ignitionConfigOverride is not a valid JSON-formatted string")
-	}
-
-	for _, node := range clusterInstance.Spec.Nodes {
-		// Check that InstallerArgs is a valid json-formatted string
-		if !isValidJSONString(node.InstallerArgs) {
-			return fmt.Errorf("installerArgs is not a valid JSON-formatted string [Node: Hostname=%s]", node.HostName)
-		}
-
-		// Check that IgnitionConfigOverride is a valid json-formatted string
-		if !isValidJSONString(node.IgnitionConfigOverride) {
-			return fmt.Errorf(
-				"node-level ignitionConfigOverride is not a valid JSON-formatted string [Node: Hostname=%s]",
-				node.HostName)
-		}
-	}
-
-	// validation succeeded
-	return nil
-}
-
-func validateControlPlaneAgents(clusterInstance *v1alpha1.ClusterInstance) error {
-	numControlPlaneAgents := 0
-	for _, node := range clusterInstance.Spec.Nodes {
-		if node.Role == "master" {
-			numControlPlaneAgents++
-		}
-	}
-
-	if numControlPlaneAgents < 1 {
-		return fmt.Errorf("at least 1 ControlPlane agent is required")
-	}
-
-	// Check that for SNO ClusterType, only 1 ControlPlane agent is specificed
-	if clusterInstance.Spec.ClusterType == v1alpha1.ClusterTypeSNO && numControlPlaneAgents != 1 {
-		// Single-node clusters must have a single control plane node and no workers.
-		return fmt.Errorf("sno cluster-type can only have 1 control-plane agent")
-	}
-
-	// validation succeeded
-	return nil
-}
-
 // Validate checks the given ClusterInstance, returns an error if validation fails, returns nil if it succeeds
 func Validate(ctx context.Context, c client.Client, clusterInstance *v1alpha1.ClusterInstance) error {
 
@@ -189,11 +127,7 @@ func Validate(ctx context.Context, c client.Client, clusterInstance *v1alpha1.Cl
 		return err
 	}
 
-	if err := validateJSONStrings(clusterInstance); err != nil {
-		return err
-	}
-
-	if err := validateControlPlaneAgents(clusterInstance); err != nil {
+	if err := v1alpha1.ValidateClusterInstance(clusterInstance); err != nil {
 		return err
 	}
 
