@@ -41,14 +41,15 @@ const (
 )
 
 type TestParams struct {
-	ClusterName         string
-	ClusterNamespace    string
-	PullSecret          string
-	BmcCredentialsName  string
-	ClusterImageSetName string
-	ExtraManifestName   string
-	ClusterTemplateRef  string
-	NodeTemplateRef     string
+	ClusterName          string
+	ClusterNamespace     string
+	PullSecret           string
+	BmcCredentialsName   string
+	ClusterImageSetName  string
+	ClusterImageSetImage string
+	ExtraManifestName    string
+	ClusterTemplateRef   string
+	NodeTemplateRef      string
 }
 
 func (tp *TestParams) GeneratePullSecret() *corev1.Secret {
@@ -60,7 +61,7 @@ func (tp *TestParams) GenerateBMCSecret() *corev1.Secret {
 }
 
 func (tp *TestParams) GenerateClusterImageSet() *hivev1.ClusterImageSet {
-	return GetMockClusterImageSet(tp.ClusterImageSetName)
+	return GetMockClusterImageSet(tp.ClusterImageSetName, tp.ClusterImageSetImage)
 }
 
 func (tp *TestParams) GenerateExtraManifest() *corev1.ConfigMap {
@@ -94,6 +95,10 @@ func (tp *TestParams) GetResources() map[string]string {
 		resources[tp.ClusterImageSetName] = "ClusterImageSet"
 	}
 
+	if tp.ClusterImageSetImage != "" {
+		resources[tp.ClusterImageSetImage] = "ReleaseImage"
+	}
+
 	if tp.ClusterTemplateRef != "" {
 		resources[tp.ClusterTemplateRef] = configMapResource
 	}
@@ -118,12 +123,13 @@ func GetMockBmcSecret(name, namespace string) *corev1.Secret {
 		Data: map[string][]byte{"username": []byte("admin"), "password": []byte("password")}}
 }
 
-func GetMockClusterImageSet(name string) *hivev1.ClusterImageSet {
+func GetMockClusterImageSet(name string, image string) *hivev1.ClusterImageSet {
 	return &hivev1.ClusterImageSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "",
-		}}
+		},
+		Spec: hivev1.ClusterImageSetSpec{ReleaseImage: image}}
 }
 
 func GetMockPullSecret(name, namespace string) *corev1.Secret {
