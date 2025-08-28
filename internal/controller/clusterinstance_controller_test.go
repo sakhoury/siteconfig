@@ -2299,7 +2299,13 @@ var _ = Describe("createOrPatch", func() {
 	})
 
 	It("succeeds in creating a manifest", func() {
-		result, err := createOrPatch(ctx, c, testLogger, object)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, object)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultCreated))
 	})
@@ -2318,7 +2324,13 @@ var _ = Describe("createOrPatch", func() {
 			},
 		}).Build()
 
-		result, err := createOrPatch(ctx, testClient, testLogger, object)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, testClient, testLogger, clusterInstance, object)
 		Expect(err).To(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultNone))
 		Expect(called).To(BeTrue())
@@ -2353,7 +2365,13 @@ var _ = Describe("createOrPatch", func() {
 		updatedObject.SetLabels(map[string]string{
 			"ownedBy": "foo",
 		})
-		result, err := createOrPatch(ctx, c, testLogger, updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultUpdated))
 	})
@@ -2379,7 +2397,13 @@ var _ = Describe("createOrPatch", func() {
 		updatedObject := object.DeepCopy()
 		updatedObject.SetAnnotations(updatedAnnotations)
 
-		result, err := createOrPatch(ctx, c, testLogger, *updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, *updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultUpdated))
 
@@ -2396,7 +2420,13 @@ var _ = Describe("createOrPatch", func() {
 
 		updatedObject := object.DeepCopy()
 
-		result, err := createOrPatch(ctx, c, testLogger, *updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, *updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultNone))
 	})
@@ -2426,7 +2456,13 @@ var _ = Describe("createOrPatch", func() {
 			},
 		}
 
-		result, err := createOrPatch(ctx, c, testLogger, updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultNone))
 	})
@@ -2487,7 +2523,13 @@ var _ = Describe("createOrPatch", func() {
 			"ownedBy": "foo",
 		})
 
-		result, err := createOrPatch(ctx, c, testLogger, updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultUpdated))
 
@@ -2571,7 +2613,13 @@ var _ = Describe("createOrPatch", func() {
 			"updatedBy": "admin",
 		})
 
-		result, err := createOrPatch(ctx, c, testLogger, updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultUpdated))
 
@@ -2662,7 +2710,13 @@ var _ = Describe("createOrPatch", func() {
 			"env": "test",
 		})
 
-		result, err := createOrPatch(ctx, c, testLogger, updatedObject)
+		clusterInstance := &v1alpha1.ClusterInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      TestClusterInstanceName,
+				Namespace: TestClusterInstanceNamespace,
+			},
+		}
+		result, err := createOrPatch(ctx, c, testLogger, clusterInstance, updatedObject)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result).To(Equal(controllerutil.OperationResultUpdated))
 

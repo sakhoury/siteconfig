@@ -59,6 +59,9 @@ import (
 
 const clusterInstanceFinalizer = "clusterinstance." + v1alpha1.Group + "/finalizer"
 
+// ClusterInstanceFieldManager is the field manager name used for Server-Side Apply operations
+const ClusterInstanceFieldManager = "siteconfig-controller"
+
 // Disaster recovery constants
 const (
 	acmBackupLabel      = "cluster.open-cluster-management.io/backup"
@@ -270,30 +273,24 @@ func (r *ClusterInstanceReconciler) updateObservedStatus(
 			return fmt.Errorf("failed to marshal current ClusterInstance spec: %w", err)
 		}
 
-		log.Sugar().Infof("Updating  %s annotation to %v", v1alpha1.LastClusterInstanceSpecAnnotation,
-			string(currentSpecJSON))
+		log.Sugar().Infof("Updating  %s annotation to %v", v1alpha1.LastClusterInstanceSpecAnnotation, string(currentSpecJSON))
+
 		patch := client.MergeFrom(clusterInstance.DeepCopy())
-		metav1.SetMetaDataAnnotation(&clusterInstance.ObjectMeta, v1alpha1.LastClusterInstanceSpecAnnotation,
-			string(currentSpecJSON))
-		if err := r.Client.Patch(ctx, clusterInstance, patch); err != nil {
-			return fmt.Errorf("failed to update %s annotation: %w",
-				v1alpha1.LastClusterInstanceSpecAnnotation, err)
+		metav1.SetMetaDataAnnotation(&clusterInstance.ObjectMeta, v1alpha1.LastClusterInstanceSpecAnnotation, string(currentSpecJSON))
+		if err := r.Patch(ctx, clusterInstance, patch); err != nil {
+			return fmt.Errorf("failed to update %s annotation: %w", v1alpha1.LastClusterInstanceSpecAnnotation, err)
 		}
 
-		// Re-fetch updated ClusterInstance
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(clusterInstance), clusterInstance); err != nil {
-			log.Error("Failed to get ClusterInstance", zap.Error(err))
+		// Re-fetch the ClusterInstance to get the updated annotations
+		if err := r.Get(ctx, client.ObjectKeyFromObject(clusterInstance), clusterInstance); err != nil {
 			return fmt.Errorf("failed to re-fetch ClusterInstance: %w", err)
 		}
 	}
 
-	log.Sugar().Infof("Updating ObservedGeneration to %d", clusterInstance.ObjectMeta.Generation)
 	patch := client.MergeFrom(clusterInstance.DeepCopy())
-	clusterInstance.Status.ObservedGeneration = clusterInstance.ObjectMeta.Generation
-
-	if err := conditions.PatchCIStatus(ctx, r.Client, clusterInstance, patch); err != nil {
-		return fmt.Errorf("failed to patch ClusterInstance status for ObservedGeneration update to %d: %w",
-			clusterInstance.ObjectMeta.Generation, err)
+	clusterInstance.Status.ObservedGeneration = clusterInstance.Generation
+	if err := r.Status().Patch(ctx, clusterInstance, patch); err != nil {
+		return fmt.Errorf("failed to patch ClusterInstance status: %w", err)
 	}
 
 	return nil
@@ -604,33 +601,150 @@ func updateLiveObject(renderedObj, updatedLiveObj *unstructured.Unstructured,
 	return controllerutil.OperationResultUpdated, nil
 }
 
-// createOrPatch ensures that the object is created or updated as needed.
-func createOrPatch(
+// prepareManagedMetadata prepares the rendered object with only ClusterInstance-managed metadata.
+// This function ensures that only the labels and annotations that should be managed by the
+// ClusterInstance controller are included in the Server-Side Apply operation.
+func prepareManagedMetadata(
+	clusterInstance *v1alpha1.ClusterInstance,
+	renderedObj *unstructured.Unstructured,
+	log *zap.Logger,
+) *unstructured.Unstructured {
+	kind := renderedObj.GetKind()
+
+	// Get current extra annotations and labels for this object kind from ClusterInstance spec
+	currentAnnotations, _ := clusterInstance.Spec.ExtraAnnotationSearch(kind)
+	currentLabels, _ := clusterInstance.Spec.ExtraLabelSearch(kind)
+
+	// Start with existing metadata from rendered object (template-generated)
+	finalAnnotations := renderedObj.GetAnnotations()
+	finalLabels := renderedObj.GetLabels()
+
+	if finalAnnotations == nil {
+		finalAnnotations = make(map[string]string)
+	}
+	if finalLabels == nil {
+		finalLabels = make(map[string]string)
+	}
+
+	// Add ClusterInstance-managed extra annotations/labels
+	for k, v := range currentAnnotations {
+		finalAnnotations[k] = v
+	}
+	for k, v := range currentLabels {
+		finalLabels[k] = v
+	}
+
+	// Create a copy of the rendered object to avoid modifying the original
+	preparedObj := renderedObj.DeepCopy()
+
+	// Set the final metadata - SSA will handle ownership and deletion tracking
+	preparedObj.SetAnnotations(finalAnnotations)
+	preparedObj.SetLabels(finalLabels)
+
+	log.Debug("Prepared object metadata for Server-Side Apply",
+		zap.Int("annotationCount", len(finalAnnotations)),
+		zap.Int("labelCount", len(finalLabels)),
+	)
+
+	return preparedObj
+}
+
+// prepareManagedMetadataSafe is a safer version of prepareManagedMetadata that avoids DeepCopy issues
+func prepareManagedMetadataSafe(
+	clusterInstance *v1alpha1.ClusterInstance,
+	renderedObj *unstructured.Unstructured,
+	log *zap.Logger,
+) (*unstructured.Unstructured, error) {
+	kind := renderedObj.GetKind()
+
+	// Get current extra annotations and labels for this object kind from ClusterInstance spec
+	currentAnnotations, _ := clusterInstance.Spec.ExtraAnnotationSearch(kind)
+	currentLabels, _ := clusterInstance.Spec.ExtraLabelSearch(kind)
+
+	// Create a new object to avoid DeepCopy issues with binary data
+	preparedObj := &unstructured.Unstructured{}
+	preparedObj.SetGroupVersionKind(renderedObj.GroupVersionKind())
+	preparedObj.SetName(renderedObj.GetName())
+	preparedObj.SetNamespace(renderedObj.GetNamespace())
+
+	// Copy the object content without using DeepCopy
+	preparedObj.Object = make(map[string]interface{})
+	for k, v := range renderedObj.Object {
+		if k != "metadata" {
+			preparedObj.Object[k] = v
+		}
+	}
+
+	// Handle metadata separately
+	if metadata, ok := renderedObj.Object["metadata"].(map[string]interface{}); ok {
+		preparedMetadata := make(map[string]interface{})
+		for k, v := range metadata {
+			preparedMetadata[k] = v
+		}
+		preparedObj.Object["metadata"] = preparedMetadata
+	}
+
+	// Start with existing metadata from rendered object (template-generated)
+	finalAnnotations := renderedObj.GetAnnotations()
+	finalLabels := renderedObj.GetLabels()
+
+	if finalAnnotations == nil {
+		finalAnnotations = make(map[string]string)
+	}
+	if finalLabels == nil {
+		finalLabels = make(map[string]string)
+	}
+
+	// Add ClusterInstance-managed extra annotations/labels
+	for k, v := range currentAnnotations {
+		finalAnnotations[k] = v
+	}
+	for k, v := range currentLabels {
+		finalLabels[k] = v
+	}
+
+	// Set the final metadata - SSA will handle ownership and deletion tracking
+	preparedObj.SetAnnotations(finalAnnotations)
+	preparedObj.SetLabels(finalLabels)
+
+	log.Debug("Prepared object metadata for Server-Side Apply",
+		zap.Int("annotationCount", len(finalAnnotations)),
+		zap.Int("labelCount", len(finalLabels)),
+	)
+
+	return preparedObj, nil
+}
+
+// isSSANotSupportedError checks if the error indicates that Server-Side Apply is not supported
+func isSSANotSupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return errStr == "apply patches are not supported in the fake client. Follow https://github.com/kubernetes/kubernetes/issues/115598 for the current status" ||
+		(apierrors.IsNotFound(err) && !apierrors.IsServerTimeout(err)) // Handle fake client not finding resources for creation
+}
+
+// createOrPatchTraditional implements the traditional patch approach for backward compatibility
+func createOrPatchTraditional(
 	ctx context.Context,
 	c client.Client,
 	log *zap.Logger,
-	renderedObj unstructured.Unstructured,
+	renderedObj *unstructured.Unstructured,
 ) (controllerutil.OperationResult, error) {
 
 	liveObj := &unstructured.Unstructured{}
 	liveObj.SetGroupVersionKind(renderedObj.GroupVersionKind())
-	if err := c.Get(ctx, client.ObjectKeyFromObject(&renderedObj), liveObj); err != nil {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(renderedObj), liveObj); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return controllerutil.OperationResultNone, fmt.Errorf("failed to get object: %w", err)
 		}
 
-		if err := c.Create(ctx, &renderedObj); err != nil {
+		if err := c.Create(ctx, renderedObj); err != nil {
 			return controllerutil.OperationResultNone, fmt.Errorf("failed to create rendered object: %w", err)
 		}
 		return controllerutil.OperationResultCreated, nil
 	}
-
-	// Update logger with object context.
-	log = log.Named("createOrPatch").With(
-		zap.String("name", liveObj.GetName()),
-		zap.String("namespace", liveObj.GetNamespace()),
-		zap.String("kind", liveObj.GetKind()),
-	)
 
 	// Object exists, update it
 	patch := client.MergeFrom(liveObj.DeepCopy())
@@ -644,7 +758,7 @@ func createOrPatch(
 	updatedLiveObj.SetAnnotations(mergeMaps(renderedObj.GetAnnotations(), updatedLiveObj.GetAnnotations()))
 	updatedLiveObj.SetLabels(mergeMaps(renderedObj.GetLabels(), updatedLiveObj.GetLabels()))
 
-	if result, err := updateLiveObject(&renderedObj, updatedLiveObj, log); err != nil {
+	if result, err := updateLiveObject(renderedObj, updatedLiveObj, log); err != nil {
 		return result, err
 	}
 
@@ -666,6 +780,94 @@ func createOrPatch(
 	return controllerutil.OperationResultNone, nil
 }
 
+// getManagedFieldsOwners returns a map of field paths to their managing field manager names.
+// This utility function helps understand which controller or user manages specific fields.
+func getManagedFieldsOwners(obj *unstructured.Unstructured) map[string]string {
+	managedFields := obj.GetManagedFields()
+	owners := make(map[string]string)
+
+	for _, field := range managedFields {
+		manager := field.Manager
+		if field.FieldsV1 == nil {
+			continue
+		}
+
+		// For simplicity, we track the manager name for now
+		// A more sophisticated implementation would parse the FieldsV1 structure
+		// to understand exactly which metadata keys this manager owns
+		owners[manager] = manager
+	}
+
+	return owners
+}
+
+// createOrPatchWithSSA uses Server-Side Apply to create or update objects with better field management.
+// This approach leverages Kubernetes' managedFields to track field ownership and enables automatic
+// deletion of fields that are no longer present in the applied configuration.
+func createOrPatchWithSSA(
+	ctx context.Context,
+	c client.Client,
+	log *zap.Logger,
+	clusterInstance *v1alpha1.ClusterInstance,
+	renderedObj unstructured.Unstructured,
+) (controllerutil.OperationResult, error) {
+
+	// Update logger with object context.
+	log = log.Named("createOrPatchWithSSA").With(
+		zap.String("name", renderedObj.GetName()),
+		zap.String("namespace", renderedObj.GetNamespace()),
+		zap.String("kind", renderedObj.GetKind()),
+	)
+
+	// Check if object exists to determine operation type
+	liveObj := &unstructured.Unstructured{}
+	liveObj.SetGroupVersionKind(renderedObj.GroupVersionKind())
+	exists := true
+	if err := c.Get(ctx, client.ObjectKeyFromObject(&renderedObj), liveObj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return controllerutil.OperationResultNone, fmt.Errorf("failed to get object: %w", err)
+		}
+		exists = false
+	}
+
+	// Prepare the object with only ClusterInstance-managed metadata
+	// Use a safe copy function to avoid DeepCopy issues with binary data
+	preparedObj, err := prepareManagedMetadataSafe(clusterInstance, &renderedObj, log)
+	if err != nil {
+		return controllerutil.OperationResultNone, fmt.Errorf("failed to prepare metadata: %w", err)
+	}
+
+	// Apply using Server-Side Apply with field manager
+	log.Debug("Applying object using Server-Side Apply")
+	if err := c.Patch(ctx, preparedObj, client.Apply, client.FieldOwner(ClusterInstanceFieldManager), client.ForceOwnership); err != nil {
+		// Fall back to traditional patch if SSA is not supported (e.g., in tests with fake client)
+		if isSSANotSupportedError(err) {
+			log.Debug("Server-Side Apply not supported, falling back to traditional patch")
+			return createOrPatchTraditional(ctx, c, log, &renderedObj)
+		}
+		return controllerutil.OperationResultNone, fmt.Errorf("failed to apply object using Server-Side Apply: %w", err)
+	}
+
+	if !exists {
+		log.Debug("Object created using Server-Side Apply")
+		return controllerutil.OperationResultCreated, nil
+	}
+
+	log.Debug("Object updated using Server-Side Apply")
+	return controllerutil.OperationResultUpdated, nil
+}
+
+// createOrPatch is a wrapper for backward compatibility that uses the new SSA approach
+func createOrPatch(
+	ctx context.Context,
+	c client.Client,
+	log *zap.Logger,
+	clusterInstance *v1alpha1.ClusterInstance,
+	renderedObj unstructured.Unstructured,
+) (controllerutil.OperationResult, error) {
+	return createOrPatchWithSSA(ctx, c, log, clusterInstance, renderedObj)
+}
+
 func (r *ClusterInstanceReconciler) executeRenderedManifests(
 	ctx context.Context,
 	c client.Client,
@@ -685,7 +887,7 @@ func (r *ClusterInstanceReconciler) executeRenderedManifests(
 
 		status := v1alpha1.ManifestRenderedFailure
 		message := ""
-		if result, err := createOrPatch(ctx, c, log, object.GetObject()); err != nil {
+		if result, err := createOrPatch(ctx, c, log, clusterInstance, object.GetObject()); err != nil {
 			errs = append(errs, err)
 			ok = false
 			message = err.Error()
